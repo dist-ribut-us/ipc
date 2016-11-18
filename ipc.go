@@ -1,3 +1,6 @@
+// Package ipc handles inter-process communication using UDP. It limits
+// communication to 127.0.0.1 and does not handle packet order or dropped
+// packets because these are unlikely issues locally.
 package ipc
 
 import (
