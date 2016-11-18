@@ -16,13 +16,13 @@ var PacketSize = 50000
 // local Procs over UDP.
 type Proc struct {
 	srv  *rnet.Server
-	pktr *IPCPacketer
+	pktr *Packeter
 }
 
 // New returns a Proc for sending and receiving communications with other
 // local processes. The server will not be running initially.
 func New() (*Proc, error) {
-	p := &IPCPacketer{
+	p := &Packeter{
 		packets: make(map[uint32]*Message),
 		ch:      make(chan *Message),
 	}
@@ -61,7 +61,7 @@ func (p *Proc) Close() error { return p.srv.Close() }
 // RunNew returns a Proc for sending and receiving communications with other
 // local processes. The server will be running initially.
 func RunNew() (*Proc, error) {
-	p := &IPCPacketer{
+	p := &Packeter{
 		packets: make(map[uint32]*Message),
 		ch:      make(chan *Message),
 	}
@@ -100,9 +100,9 @@ func (p *Proc) Send(msg []byte, port int) error {
 	return err
 }
 
-// IPCPacketer handles making and collecting packets for inter-process
+// Packeter handles making and collecting packets for inter-process
 // communicaiton
-type IPCPacketer struct {
+type Packeter struct {
 	packets map[uint32]*Message
 	ch      chan *Message
 }
@@ -117,13 +117,13 @@ type Message struct {
 }
 
 // Chan returns the channel messages will be sent on
-func (i *IPCPacketer) Chan() <-chan *Message {
+func (i *Packeter) Chan() <-chan *Message {
 	return i.ch
 }
 
 // Receive takes a packet and and address. The address must have an IP of
 // 127.0.0.1. All packets in a message must come from the same Port.
-func (i *IPCPacketer) Receive(b []byte, addr *rnet.Addr) {
+func (i *Packeter) Receive(b []byte, addr *rnet.Addr) {
 	if addr.IP.String() != "127.0.0.1" {
 		return
 	}
@@ -155,7 +155,7 @@ func (i *IPCPacketer) Receive(b []byte, addr *rnet.Addr) {
 // than PacketSize. The message is prepended with the total length and each
 // packet is prepended with an ID. There is no mechanism for ordering or packet
 // loss, the assumption is that between processes neither will be an issue.
-func (i *IPCPacketer) Make(msg []byte) ([][]byte, error) {
+func (i *Packeter) Make(msg []byte) ([][]byte, error) {
 	l := len(msg)
 	b := make([]byte, l+4)
 	serial.MarshalUint32(uint32(l), b)

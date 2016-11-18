@@ -9,7 +9,7 @@ import (
 
 func TestRoundTripOnePacket(t *testing.T) {
 	ln := 1000
-	p := &IPCPacketer{
+	p := &Packeter{
 		packets: make(map[uint32]*Message),
 		ch:      make(chan *Message),
 	}
@@ -32,7 +32,7 @@ func TestRoundTripOnePacket(t *testing.T) {
 
 func TestRoundTripManyPackets(t *testing.T) {
 	ln := PacketSize*3 + 2000
-	p := &IPCPacketer{
+	p := &Packeter{
 		packets: make(map[uint32]*Message),
 		ch:      make(chan *Message),
 	}
