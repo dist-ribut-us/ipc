@@ -24,13 +24,13 @@ type Proc struct {
 
 // New returns a Proc for sending and receiving communications with other
 // local processes. The server will not be running initially.
-func New() (*Proc, error) {
+func New(port int) (*Proc, error) {
 	p := &Packeter{
 		packets: make(map[uint32]*Message),
 		ch:      make(chan *Message),
 	}
 
-	srv, err := rnet.New("127.0.0.1:0", p)
+	srv, err := rnet.New(fmt.Sprintf("127.0.0.1:%d", port), p)
 	if err != nil {
 		return nil, err
 	}
@@ -48,7 +48,7 @@ func (p *Proc) Run() { p.srv.Run() }
 // IsRunning indicates if the listen loop is running
 func (p *Proc) IsRunning() bool { return p.srv.IsRunning() }
 
-// Port returnst the UDP port
+// Port returns the UDP port
 func (p *Proc) Port() int { return p.srv.Port() }
 
 // IsOpen returns true if the connection is open. If the server is closed, it
@@ -63,13 +63,13 @@ func (p *Proc) Close() error { return p.srv.Close() }
 
 // RunNew returns a Proc for sending and receiving communications with other
 // local processes. The server will be running initially.
-func RunNew() (*Proc, error) {
+func RunNew(port int) (*Proc, error) {
 	p := &Packeter{
 		packets: make(map[uint32]*Message),
 		ch:      make(chan *Message),
 	}
 
-	srv, err := rnet.RunNew("127.0.0.1:0", p)
+	srv, err := rnet.RunNew(fmt.Sprintf("127.0.0.1:%d", port), p)
 	if err != nil {
 		return nil, err
 	}
