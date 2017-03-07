@@ -51,6 +51,9 @@ func (p *Proc) IsRunning() bool { return p.srv.IsRunning() }
 // Port returns the UDP port
 func (p *Proc) Port() int { return p.srv.Port() }
 
+// String returns the address of the process
+func (p *Proc) String() string { return fmt.Sprintf("127.0.0.1:%d", p.srv.Port()) }
+
 // IsOpen returns true if the connection is open. If the server is closed, it
 // can neither send nor receive
 func (p *Proc) IsOpen() bool { return p.srv.IsOpen() }
