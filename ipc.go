@@ -24,13 +24,13 @@ type Proc struct {
 
 // New returns a Proc for sending and receiving communications with other
 // local processes. The server will not be running initially.
-func New(port int) (*Proc, error) {
+func New(port rnet.Port) (*Proc, error) {
 	p := &Packeter{
 		packets: make(map[uint32]*Message),
 		ch:      make(chan *Message),
 	}
 
-	srv, err := rnet.New(fmt.Sprintf("127.0.0.1:%d", port), p)
+	srv, err := rnet.New(port, p)
 	if err != nil {
 		return nil, err
 	}
@@ -49,7 +49,7 @@ func (p *Proc) Run() { p.srv.Run() }
 func (p *Proc) IsRunning() bool { return p.srv.IsRunning() }
 
 // Port returns the UDP port
-func (p *Proc) Port() int { return p.srv.Port() }
+func (p *Proc) Port() rnet.Port { return p.srv.Port() }
 
 // String returns the address of the process
 func (p *Proc) String() string { return fmt.Sprintf("127.0.0.1:%d", p.srv.Port()) }
@@ -66,13 +66,13 @@ func (p *Proc) Close() error { return p.srv.Close() }
 
 // RunNew returns a Proc for sending and receiving communications with other
 // local processes. The server will be running initially.
-func RunNew(port int) (*Proc, error) {
+func RunNew(port rnet.Port) (*Proc, error) {
 	p := &Packeter{
 		packets: make(map[uint32]*Message),
 		ch:      make(chan *Message),
 	}
 
-	srv, err := rnet.RunNew(fmt.Sprintf("127.0.0.1:%d", port), p)
+	srv, err := rnet.RunNew(port, p)
 	if err != nil {
 		return nil, err
 	}
@@ -91,15 +91,15 @@ func (p *Proc) Chan() <-chan *Message {
 // Send takes a message and the port of the receiving process and sends the
 // message to the other process. It prepends the length of the messsage. Unlike
 // the Packeter, this does not worry about dropped packets or ordering.
-func (p *Proc) Send(msg []byte, port int) error {
+func (p *Proc) Send(msg []byte, port rnet.Port) error {
 	pkts, err := p.pktr.Make(msg)
 	if err != nil {
 		return err
 	}
 
-	addr, err := rnet.ResolveAddr(fmt.Sprintf("127.0.0.1:%d", port))
-	if err != nil {
-		return err
+	addr := port.On("127.0.0.1")
+	if addr.Err != nil {
+		return addr.Err
 	}
 
 	err = p.srv.SendAll(pkts, addr)
