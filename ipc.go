@@ -6,6 +6,8 @@ package ipc
 import (
 	"crypto/rand"
 	"fmt"
+	"github.com/dist-ribut-us/errors"
+	"github.com/dist-ribut-us/log"
 	"github.com/dist-ribut-us/rnet"
 	"github.com/dist-ribut-us/serial"
 	"math"
@@ -91,19 +93,16 @@ func (p *Proc) Chan() <-chan *Message {
 // Send takes a message and the port of the receiving process and sends the
 // message to the other process. It prepends the length of the messsage. Unlike
 // the Packeter, this does not worry about dropped packets or ordering.
-func (p *Proc) Send(msg []byte, port rnet.Port) error {
-	pkts, err := p.pktr.Make(msg)
-	if err != nil {
-		return err
-	}
-
+func (p *Proc) Send(msg []byte, port rnet.Port) {
+	pkts := p.pktr.Make(msg)
 	addr := port.On("127.0.0.1")
-	if addr.Err != nil {
-		return addr.Err
+	if log.Error(errors.Wrap("generating_local_addr_for_ipc", addr.Err)) {
+		return
 	}
-
-	err = p.srv.SendAll(pkts, addr)
-	return err
+	errs := p.srv.SendAll(pkts, addr)
+	if errs != nil {
+		log.Info(log.Lbl("while_sending_over_ipc"), errs)
+	}
 }
 
 // Packeter handles making and collecting packets for inter-process
@@ -131,6 +130,7 @@ func (i *Packeter) Chan() <-chan *Message {
 // 127.0.0.1. All packets in a message must come from the same Port.
 func (i *Packeter) Receive(b []byte, addr *rnet.Addr) {
 	if addr.IP.String() != "127.0.0.1" {
+		log.Info(log.Lbl("non_local_ipc_message"), addr)
 		return
 	}
 
@@ -139,13 +139,14 @@ func (i *Packeter) Receive(b []byte, addr *rnet.Addr) {
 	if !ok {
 		msg = &Message{
 			ID:   id,
-			Body: b[8:],
-			Addr: addr,
 			Len:  int(serial.UnmarshalUint32(b[4:])),
+			Addr: addr,
+			Body: b[8:],
 		}
-	} else if addr.Port == msg.Addr.Port {
+	} else if addr.Port() == msg.Addr.Port() {
 		msg.Body = append(msg.Body, b[4:]...)
 	} else {
+		log.Info(log.Lbl("message_changed_ports"), log.KV{"started_on", msg.Addr}, log.KV{"now_on", addr})
 		return
 	}
 
@@ -161,7 +162,7 @@ func (i *Packeter) Receive(b []byte, addr *rnet.Addr) {
 // than PacketSize. The message is prepended with the total length and each
 // packet is prepended with an ID. There is no mechanism for ordering or packet
 // loss, the assumption is that between processes neither will be an issue.
-func (i *Packeter) Make(msg []byte) ([][]byte, error) {
+func (i *Packeter) Make(msg []byte) [][]byte {
 	l := len(msg)
 	b := make([]byte, l+4)
 	serial.MarshalUint32(uint32(l), b)
@@ -169,8 +170,8 @@ func (i *Packeter) Make(msg []byte) ([][]byte, error) {
 
 	id := make([]byte, 4)
 	_, err := rand.Read(id)
-	if err != nil {
-		return nil, err
+	if log.Error(errors.Wrap("generating_id_for_ipc_packets", err)) {
+		return nil
 	}
 
 	p := PacketSize - 4
@@ -187,5 +188,5 @@ func (i *Packeter) Make(msg []byte) ([][]byte, error) {
 	copy(pkts[n], id)
 	copy(pkts[n][4:], final)
 
-	return pkts, nil
+	return pkts
 }

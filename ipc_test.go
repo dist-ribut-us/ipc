@@ -15,8 +15,7 @@ func TestRoundTripOnePacket(t *testing.T) {
 	}
 	msg := make([]byte, ln)
 	rand.Read(msg)
-	pks, err := p.Make(msg)
-	assert.NoError(t, err)
+	pks := p.Make(msg)
 	addr, err := rnet.ResolveAddr("127.0.0.1:1234")
 	assert.NoError(t, err)
 	go func() {
@@ -38,8 +37,7 @@ func TestRoundTripManyPackets(t *testing.T) {
 	}
 	msg := make([]byte, ln)
 	rand.Read(msg)
-	pks, err := p.Make(msg)
-	assert.NoError(t, err)
+	pks := p.Make(msg)
 	addr, err := rnet.ResolveAddr("127.0.0.1:1234")
 	assert.NoError(t, err)
 	go func() {
