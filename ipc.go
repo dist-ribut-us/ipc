@@ -4,13 +4,10 @@
 package ipc
 
 import (
-	"crypto/rand"
 	"fmt"
 	"github.com/dist-ribut-us/errors"
 	"github.com/dist-ribut-us/log"
 	"github.com/dist-ribut-us/rnet"
-	"github.com/dist-ribut-us/serial"
-	"math"
 )
 
 // PacketSize is the max packet size, it's set a bit less than the absolute max
@@ -105,88 +102,20 @@ func (p *Proc) Send(msg []byte, port rnet.Port) {
 	}
 }
 
-// Packeter handles making and collecting packets for inter-process
-// communicaiton
-type Packeter struct {
-	packets map[uint32]*Message
-	ch      chan *Message
-}
-
-// Message is used to assemble the messages and send them through the channel
-// when they are complete.
-type Message struct {
-	ID   uint32
-	Body []byte
-	Addr *rnet.Addr
-	Len  int
-}
-
-// Chan returns the channel messages will be sent on
-func (i *Packeter) Chan() <-chan *Message {
-	return i.ch
-}
-
-// Receive takes a packet and and address. The address must have an IP of
-// 127.0.0.1. All packets in a message must come from the same Port.
-func (i *Packeter) Receive(b []byte, addr *rnet.Addr) {
-	if addr.IP.String() != "127.0.0.1" {
-		log.Info(log.Lbl("non_local_ipc_message"), addr)
+// SendResponse takes a response and the the wrapped query it is responding to
+// and sends the response with the same message id to source of the query.
+func (p *Proc) SendResponse(r *Response, q *Wrapper) {
+	msg, err := r.Wrap()
+	if log.Error(errors.Wrap("wrapping_response_to_send", err)) {
 		return
 	}
-
-	id := serial.UnmarshalUint32(b)
-	msg, ok := i.packets[id]
-	if !ok {
-		msg = &Message{
-			ID:   id,
-			Len:  int(serial.UnmarshalUint32(b[4:])),
-			Addr: addr,
-			Body: b[8:],
-		}
-	} else if addr.Port() == msg.Addr.Port() {
-		msg.Body = append(msg.Body, b[4:]...)
-	} else {
-		log.Info(log.Lbl("message_changed_ports"), log.KV{"started_on", msg.Addr}, log.KV{"now_on", addr})
+	pkts := p.pktr.MakeWithID(q.Id, msg)
+	addr := q.Port().On("127.0.0.1")
+	if log.Error(errors.Wrap("generating_local_addr_for_ipc", addr.Err)) {
 		return
 	}
-
-	if len(msg.Body) >= msg.Len {
-		i.ch <- msg
-		delete(i.packets, id)
-	} else {
-		i.packets[id] = msg
+	errs := p.srv.SendAll(pkts, addr)
+	if errs != nil {
+		log.Info(log.Lbl("while_sending_response_over_ipc"), errs)
 	}
-}
-
-// Make takes a message and divides it into packets, where each is no longer
-// than PacketSize. The message is prepended with the total length and each
-// packet is prepended with an ID. There is no mechanism for ordering or packet
-// loss, the assumption is that between processes neither will be an issue.
-func (i *Packeter) Make(msg []byte) [][]byte {
-	l := len(msg)
-	b := make([]byte, l+4)
-	serial.MarshalUint32(uint32(l), b)
-	copy(b[4:], msg)
-
-	id := make([]byte, 4)
-	_, err := rand.Read(id)
-	if log.Error(errors.Wrap("generating_id_for_ipc_packets", err)) {
-		return nil
-	}
-
-	p := PacketSize - 4
-	ln := int(math.Ceil(float64(l) / float64(p)))
-	pkts := make([][]byte, ln)
-	n := 0
-	for ; n < ln-1; n++ {
-		pkts[n] = make([]byte, PacketSize)
-		copy(pkts[n], id)
-		copy(pkts[n][4:], b[n*p:(n+1)*p])
-	}
-	final := b[n*p:]
-	pkts[n] = make([]byte, len(final)+4)
-	copy(pkts[n], id)
-	copy(pkts[n][4:], final)
-
-	return pkts
 }
