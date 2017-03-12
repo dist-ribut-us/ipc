@@ -10,10 +10,7 @@ import (
 
 func TestRoundTripOnePacket(t *testing.T) {
 	ln := 1000
-	p := &Packeter{
-		packets: make(map[uint32]*Message),
-		ch:      make(chan *Message),
-	}
+	p := newPacketer(nil)
 	msg := make([]byte, ln)
 	rand.Read(msg)
 	pks := p.Make(msg)
@@ -32,10 +29,7 @@ func TestRoundTripOnePacket(t *testing.T) {
 
 func TestRoundTripManyPackets(t *testing.T) {
 	ln := PacketSize*3 + 2000
-	p := &Packeter{
-		packets: make(map[uint32]*Message),
-		ch:      make(chan *Message),
-	}
+	p := newPacketer(nil)
 	msg := make([]byte, ln)
 	rand.Read(msg)
 	pks := p.Make(msg)
@@ -68,6 +62,8 @@ func TestIPCRoundTrip(t *testing.T) {
 }
 
 func TestResponseCallback(t *testing.T) {
+	testType := uint32(3141)
+
 	p1, err := RunNew(1236)
 	assert.NoError(t, err)
 	p2, err := RunNew(1237)
@@ -76,31 +72,24 @@ func TestResponseCallback(t *testing.T) {
 	out := make(chan string)
 
 	go func() {
-		m := <-p2.Chan()
-		q, err := m.Unwrap()
-		if !assert.NoError(t, err) {
+		q, err := (<-p2.Chan()).ToBase()
+		if !assert.NoError(t, err) || !assert.True(t, q.IsQuery()) {
 			out <- "fail"
 			return
 		}
-		if !assert.Equal(t, Type_QUERY, q.Type) {
-			out <- "fail"
-			return
-		}
-		assert.Equal(t, "test", q.Query.Type)
-		assert.Equal(t, []byte{111}, q.Query.Body)
-		r := &Response{
-			Body: []byte("testbody"),
-		}
-		p2.SendResponse(r, q)
+		assert.Equal(t, testType, q.Type)
+		assert.Equal(t, []byte{111}, q.Body)
+		q.Respond([]byte("testbody"))
 	}()
 
-	q := &Query{
-		Type: "test",
-		Body: []byte{111},
-	}
-	p1.SendQuery(q, p2.Port(), func(r *Wrapper) {
-		out <- string(r.Response.Body)
-	})
+	p1.
+		Query(testType, []byte{111}).
+		To(p2.Port()).
+		Send(func(r *Base) {
+			assert.Equal(t, testType, r.Type)
+			assert.True(t, r.IsResponse())
+			out <- string(r.Body)
+		})
 
 	select {
 	case resp := <-out:

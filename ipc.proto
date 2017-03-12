@@ -2,24 +2,9 @@ syntax = "proto3";
 
 package ipc;
 
-enum Type {
-  QUERY = 0;
-  RESPONSE = 1;
-}
-
-message Wrapper{
-  Type type = 1;
-  uint32 port32 = 2;
-  uint32 id = 3;
-  Query query = 4;
-  Response response = 5;
-}
-
-message Query{
-  string type = 1;
-  bytes body = 2;
-}
-
-message Response{
-  bytes body = 1;
+// reserve first 20 for type
+message Header{
+  uint32 type = 1;
+  uint32 flags = 2;
+  bytes body = 3;
 }

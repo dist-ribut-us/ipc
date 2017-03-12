@@ -7,24 +7,58 @@ import (
 	"github.com/dist-ribut-us/rnet"
 	"github.com/dist-ribut-us/serial"
 	"math"
+	"sync"
+	"time"
 )
 
-// Packeter handles making and collecting packets for inter-process
+// packeter handles making and collecting packets for inter-process
 // communicaiton
-type Packeter struct {
+type packeter struct {
 	packets   map[uint32]*Message
 	ch        chan *Message
-	callbacks map[uint32]func(r *Wrapper)
+	callbacks map[uint32]Callback
+	mux       *sync.RWMutex
+	proc      *Proc
+}
+
+func newPacketer(proc *Proc) *packeter {
+	return &packeter{
+		packets:   make(map[uint32]*Message),
+		ch:        make(chan *Message),
+		callbacks: make(map[uint32]Callback),
+		mux:       &sync.RWMutex{},
+		proc:      proc,
+	}
 }
 
 // Chan returns the channel messages will be sent on
-func (i *Packeter) Chan() <-chan *Message {
+func (i *packeter) Chan() <-chan *Message {
 	return i.ch
+}
+
+func (i *packeter) SetCallback(id uint32, callback Callback) {
+	i.mux.RLock()
+	i.callbacks[id] = callback
+	i.mux.RUnlock()
+	go i.cleanupCallback(id)
+}
+
+func (i *packeter) cleanupCallback(id uint32) {
+	time.Sleep(time.Millisecond * 10)
+	i.mux.RLock()
+	_, timedout := i.callbacks[id]
+	i.mux.RUnlock()
+	if timedout {
+		i.mux.Lock()
+		delete(i.callbacks, id)
+		i.mux.Unlock()
+		log.Info(log.Lbl("callback_timedout"), id)
+	}
 }
 
 // Receive takes a packet and and address. The address must have an IP of
 // 127.0.0.1. All packets in a message must come from the same Port.
-func (i *Packeter) Receive(b []byte, addr *rnet.Addr) {
+func (i *packeter) Receive(b []byte, addr *rnet.Addr) {
 	if addr.IP.String() != "127.0.0.1" {
 		log.Info(log.Lbl("non_local_ipc_message"), addr)
 		return
@@ -38,6 +72,7 @@ func (i *Packeter) Receive(b []byte, addr *rnet.Addr) {
 			Len:  int(serial.UnmarshalUint32(b[4:])),
 			Addr: addr,
 			Body: b[8:],
+			proc: i.proc,
 		}
 	} else if addr.Port() == msg.Addr.Port() {
 		msg.Body = append(msg.Body, b[4:]...)
@@ -47,10 +82,16 @@ func (i *Packeter) Receive(b []byte, addr *rnet.Addr) {
 	}
 
 	if len(msg.Body) >= msg.Len {
-		if callback, ok := i.callbacks[msg.ID]; ok {
-			r, err := msg.Unwrap()
-			if !log.Error(err) && r.Type == Type_RESPONSE {
-				go callback(r)
+		i.mux.RLock()
+		callback, ok := i.callbacks[msg.ID]
+		i.mux.RUnlock()
+		if ok {
+			i.mux.Lock()
+			delete(i.callbacks, id)
+			i.mux.Unlock()
+			b, err := msg.ToBase()
+			if !log.Error(err) {
+				go callback(b)
 			}
 		} else {
 			i.ch <- msg
@@ -62,7 +103,7 @@ func (i *Packeter) Receive(b []byte, addr *rnet.Addr) {
 }
 
 // Make takes a message, generates a random ID and calls MakeWithID
-func (i *Packeter) Make(msg []byte) [][]byte {
+func (i *packeter) Make(msg []byte) [][]byte {
 	return i.MakeWithID(randID(), msg)
 }
 
@@ -80,7 +121,7 @@ func randID() uint32 {
 // and each packet is prepended with the ID. There is no mechanism for ordering
 // or packet loss, the assumption is that between processes neither will be an
 // issue.
-func (i *Packeter) MakeWithID(id uint32, msg []byte) [][]byte {
+func (i *packeter) MakeWithID(id uint32, msg []byte) [][]byte {
 	l := len(msg)
 	b := make([]byte, l+4)
 	serial.MarshalUint32(uint32(l), b)

@@ -1,5 +1,8 @@
 ## Dev Notes
 
-It would be nice to unify all the message id stuff. Move ID out of query and
-response and into wrap, then have it set to 0 when sent over the wire but use
-it as the message for the packets.
+Need a better name than ipc.Type - it identifies type, it's a base for any
+simple message, it's an abstract message
+
+I could also embed the Type in a nice wrapper. Then we wouldn't have the
+unused protobuf fields. I could also hold onto a reference to the *Proc that
+received the original message.

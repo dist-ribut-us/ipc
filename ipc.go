@@ -8,7 +8,6 @@ import (
 	"github.com/dist-ribut-us/errors"
 	"github.com/dist-ribut-us/log"
 	"github.com/dist-ribut-us/rnet"
-	"time"
 )
 
 // PacketSize is the max packet size, it's set a bit less than the absolute max
@@ -19,27 +18,21 @@ var PacketSize = 50000
 // local Procs over UDP.
 type Proc struct {
 	srv  *rnet.Server
-	pktr *Packeter
+	pktr *packeter
 }
 
 // New returns a Proc for sending and receiving communications with other
 // local processes. The server will not be running initially.
 func New(port rnet.Port) (*Proc, error) {
-	p := &Packeter{
-		packets:   make(map[uint32]*Message),
-		ch:        make(chan *Message),
-		callbacks: make(map[uint32]func(r *Wrapper)),
-	}
-
-	srv, err := rnet.New(port, p)
+	var err error
+	proc := &Proc{}
+	proc.pktr = newPacketer(proc)
+	proc.srv, err = rnet.New(port, proc.pktr)
 	if err != nil {
 		return nil, err
 	}
 
-	return &Proc{
-		srv:  srv,
-		pktr: p,
-	}, nil
+	return proc, nil
 }
 
 // Run will start the listen loop. Calling run multiple times will not start
@@ -68,21 +61,12 @@ func (p *Proc) Close() error { return p.srv.Close() }
 // RunNew returns a Proc for sending and receiving communications with other
 // local processes. The server will be running initially.
 func RunNew(port rnet.Port) (*Proc, error) {
-	p := &Packeter{
-		packets:   make(map[uint32]*Message),
-		ch:        make(chan *Message),
-		callbacks: make(map[uint32]func(r *Wrapper)),
-	}
-
-	srv, err := rnet.RunNew(port, p)
+	p, err := New(port)
 	if err != nil {
 		return nil, err
 	}
-
-	return &Proc{
-		srv:  srv,
-		pktr: p,
-	}, nil
+	go p.Run()
+	return p, nil
 }
 
 // Chan returns the channel messages will be sent on from the packeter
@@ -92,7 +76,7 @@ func (p *Proc) Chan() <-chan *Message {
 
 // Send takes a message and the port of the receiving process and sends the
 // message to the other process. It prepends the length of the messsage. Unlike
-// the Packeter, this does not worry about dropped packets or ordering.
+// the packeter, this does not worry about dropped packets or ordering.
 func (p *Proc) Send(msg []byte, port rnet.Port) {
 	pkts := p.pktr.Make(msg)
 	addr := port.On("127.0.0.1")
@@ -102,48 +86,5 @@ func (p *Proc) Send(msg []byte, port rnet.Port) {
 	errs := p.srv.SendAll(pkts, addr)
 	if errs != nil {
 		log.Info(log.Lbl("while_sending_over_ipc"), errs)
-	}
-}
-
-// SendResponse takes a response and the the wrapped query it is responding to
-// and sends the response with the same message id to source of the query.
-func (p *Proc) SendResponse(r *Response, q *Wrapper) {
-	msg, err := r.Wrap()
-	if log.Error(errors.Wrap("wrapping_response_to_send", err)) {
-		return
-	}
-	pkts := p.pktr.MakeWithID(q.Id, msg)
-	addr := q.Port().On("127.0.0.1")
-	if log.Error(errors.Wrap("generating_local_addr_for_ipc", addr.Err)) {
-		return
-	}
-	errs := p.srv.SendAll(pkts, addr)
-	if errs != nil {
-		log.Info(log.Lbl("while_sending_response_over_ipc"), errs)
-	}
-}
-
-// SendQuery will send a query to another process and send the response to the
-// callback function. This also means that the response will not end up on the
-// Proc channel.
-func (p *Proc) SendQuery(q *Query, port rnet.Port, callback func(r *Wrapper)) {
-	msg, err := q.Wrap()
-	if log.Error(errors.Wrap("wrapping_query_to_send", err)) {
-		return
-	}
-	id := randID()
-	pkts := p.pktr.MakeWithID(id, msg)
-	addr := port.On("127.0.0.1")
-	if log.Error(errors.Wrap("generating_local_addr_for_ipc", addr.Err)) {
-		return
-	}
-	p.pktr.callbacks[id] = callback
-	go func() {
-		time.Sleep(time.Millisecond * 10)
-		delete(p.pktr.callbacks, id)
-	}()
-	errs := p.srv.SendAll(pkts, addr)
-	if errs != nil {
-		log.Info(log.Lbl("while_sending_response_over_ipc"), errs)
 	}
 }
