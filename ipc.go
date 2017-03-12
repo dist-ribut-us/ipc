@@ -8,6 +8,7 @@ import (
 	"github.com/dist-ribut-us/errors"
 	"github.com/dist-ribut-us/log"
 	"github.com/dist-ribut-us/rnet"
+	"time"
 )
 
 // PacketSize is the max packet size, it's set a bit less than the absolute max
@@ -25,8 +26,9 @@ type Proc struct {
 // local processes. The server will not be running initially.
 func New(port rnet.Port) (*Proc, error) {
 	p := &Packeter{
-		packets: make(map[uint32]*Message),
-		ch:      make(chan *Message),
+		packets:   make(map[uint32]*Message),
+		ch:        make(chan *Message),
+		callbacks: make(map[uint32]func(r *Wrapper)),
 	}
 
 	srv, err := rnet.New(port, p)
@@ -67,8 +69,9 @@ func (p *Proc) Close() error { return p.srv.Close() }
 // local processes. The server will be running initially.
 func RunNew(port rnet.Port) (*Proc, error) {
 	p := &Packeter{
-		packets: make(map[uint32]*Message),
-		ch:      make(chan *Message),
+		packets:   make(map[uint32]*Message),
+		ch:        make(chan *Message),
+		callbacks: make(map[uint32]func(r *Wrapper)),
 	}
 
 	srv, err := rnet.RunNew(port, p)
@@ -114,6 +117,31 @@ func (p *Proc) SendResponse(r *Response, q *Wrapper) {
 	if log.Error(errors.Wrap("generating_local_addr_for_ipc", addr.Err)) {
 		return
 	}
+	errs := p.srv.SendAll(pkts, addr)
+	if errs != nil {
+		log.Info(log.Lbl("while_sending_response_over_ipc"), errs)
+	}
+}
+
+// SendQuery will send a query to another process and send the response to the
+// callback function. This also means that the response will not end up on the
+// Proc channel.
+func (p *Proc) SendQuery(q *Query, port rnet.Port, callback func(r *Wrapper)) {
+	msg, err := q.Wrap()
+	if log.Error(errors.Wrap("wrapping_query_to_send", err)) {
+		return
+	}
+	id := randID()
+	pkts := p.pktr.MakeWithID(id, msg)
+	addr := port.On("127.0.0.1")
+	if log.Error(errors.Wrap("generating_local_addr_for_ipc", addr.Err)) {
+		return
+	}
+	p.pktr.callbacks[id] = callback
+	go func() {
+		time.Sleep(time.Millisecond * 10)
+		delete(p.pktr.callbacks, id)
+	}()
 	errs := p.srv.SendAll(pkts, addr)
 	if errs != nil {
 		log.Info(log.Lbl("while_sending_response_over_ipc"), errs)

@@ -12,8 +12,9 @@ import (
 // Packeter handles making and collecting packets for inter-process
 // communicaiton
 type Packeter struct {
-	packets map[uint32]*Message
-	ch      chan *Message
+	packets   map[uint32]*Message
+	ch        chan *Message
+	callbacks map[uint32]func(r *Wrapper)
 }
 
 // Chan returns the channel messages will be sent on
@@ -46,7 +47,14 @@ func (i *Packeter) Receive(b []byte, addr *rnet.Addr) {
 	}
 
 	if len(msg.Body) >= msg.Len {
-		i.ch <- msg
+		if callback, ok := i.callbacks[msg.ID]; ok {
+			r, err := msg.Unwrap()
+			if !log.Error(err) && r.Type == Type_RESPONSE {
+				go callback(r)
+			}
+		} else {
+			i.ch <- msg
+		}
 		delete(i.packets, id)
 	} else {
 		i.packets[id] = msg
@@ -55,13 +63,16 @@ func (i *Packeter) Receive(b []byte, addr *rnet.Addr) {
 
 // Make takes a message, generates a random ID and calls MakeWithID
 func (i *Packeter) Make(msg []byte) [][]byte {
+	return i.MakeWithID(randID(), msg)
+}
+
+func randID() uint32 {
 	b := make([]byte, 4)
 	_, err := rand.Read(b)
 	if log.Error(errors.Wrap("generating_packet_id", err)) {
-		return nil
+		return 0
 	}
-	id := (uint32(b[0]) + uint32(b[1])<<8 + uint32(b[2])<<16 + uint32(b[3])<<24)
-	return i.MakeWithID(id, msg)
+	return (uint32(b[0]) + uint32(b[1])<<8 + uint32(b[2])<<16 + uint32(b[3])<<24)
 }
 
 // MakeWithID takes an ID and a message and divides it into packets, where each
