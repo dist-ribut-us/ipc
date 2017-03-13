@@ -131,8 +131,7 @@ func (i *packeter) MakeWithID(id uint32, msg []byte) [][]byte {
 	ln := int(math.Ceil(float64(l) / float64(p)))
 	pkts := make([][]byte, ln)
 	n := 0
-	ids := make([]byte, 4)
-	serial.MarshalUint32(id, ids)
+	ids := serial.MarshalUint32(id, nil)
 	for ; n < ln-1; n++ {
 		pkts[n] = make([]byte, PacketSize)
 		copy(pkts[n], ids)

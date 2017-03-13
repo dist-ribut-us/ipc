@@ -19,6 +19,7 @@ const (
 	TUndefined = uint32(iota)
 	TPort
 	TPing
+	TRegister
 )
 
 // ErrTypesDoNotMatch is thrown when trying to convert a Type to the wrong
@@ -120,7 +121,17 @@ func (p *Proc) Query(t uint32, body []byte) *Base {
 		},
 		proc: p,
 	}
+}
 
+// Base creates a basic message with no flags
+func (p *Proc) Base(t uint32, body []byte) *Base {
+	return &Base{
+		Header: &Header{
+			Type: t,
+			Body: body,
+		},
+		proc: p,
+	}
 }
 
 // Query defines the fields needed for SendResponse to respond to query
