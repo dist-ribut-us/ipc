@@ -58,7 +58,8 @@ func TestHandler(t *testing.T) {
 
 	msg := message.NewHeader(message.Test, make([]byte, ln))
 	rand.Read(msg.Body)
-	pks := p.Make(msg.Marshal())
+	id := randID()
+	pks := p.MakeWithID(id, msg.Marshal())
 
 	addr := rnet.Port(1234).Addr()
 	go func() {
@@ -71,6 +72,7 @@ func TestHandler(t *testing.T) {
 	case out := <-ch:
 		assert.Equal(t, msg.Body, out.Body)
 		assert.Equal(t, msg.Type32, out.Type32)
+		assert.Equal(t, id, out.Id)
 	case <-time.After(time.Millisecond * 20):
 		t.Error("timed out")
 	}

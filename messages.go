@@ -30,9 +30,9 @@ func (m *Message) ToBase() (*Base, error) {
 	if err != nil {
 		return nil, err
 	}
+	h.Id = m.ID
 	base := &Base{
 		Header: &h,
-		ID:     m.ID,
 		proc:   m.proc,
 		port:   m.Addr.Port(),
 	}
@@ -43,7 +43,6 @@ func (m *Message) ToBase() (*Base, error) {
 // helper functions for simple query and response messages.
 type Base struct {
 	*message.Header
-	ID   uint32
 	proc *Proc
 	port rnet.Port
 }
@@ -62,7 +61,7 @@ func (b *Base) Port() rnet.Port {
 
 // GetID returns the ID and fulfills Query.
 func (b *Base) GetID() uint32 {
-	return b.ID
+	return b.Id
 }
 
 // Respond to a query
@@ -100,9 +99,9 @@ func (p *Proc) Base(t message.Type, body interface{}) *Base {
 		Type32: uint32(t),
 	}
 	h.SetBody(body)
+	h.Id = randID()
 	return &Base{
 		Header: h,
-		ID:     randID(),
 		proc:   p,
 	}
 }
