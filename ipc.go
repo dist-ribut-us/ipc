@@ -73,7 +73,7 @@ func RunNew(port rnet.Port) (*Proc, error) {
 }
 
 // Chan returns the channel messages will be sent on from the packeter
-func (p *Proc) Chan() <-chan *Message {
+func (p *Proc) Chan() <-chan *Package {
 	return p.pktr.Chan()
 }
 

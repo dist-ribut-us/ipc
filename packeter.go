@@ -14,8 +14,8 @@ import (
 // packeter handles making and collecting packets for inter-process
 // communicaiton
 type packeter struct {
-	packets   map[uint32]*Message
-	ch        chan *Message
+	packets   map[uint32]*Package
+	ch        chan *Package
 	callbacks map[uint32]Callback
 	mux       *sync.RWMutex
 	proc      *Proc
@@ -24,8 +24,8 @@ type packeter struct {
 
 func newPacketer(proc *Proc) *packeter {
 	return &packeter{
-		packets:   make(map[uint32]*Message),
-		ch:        make(chan *Message),
+		packets:   make(map[uint32]*Package),
+		ch:        make(chan *Package),
 		callbacks: make(map[uint32]Callback),
 		mux:       &sync.RWMutex{},
 		proc:      proc,
@@ -33,84 +33,84 @@ func newPacketer(proc *Proc) *packeter {
 }
 
 // Chan returns the channel messages will be sent on
-func (i *packeter) Chan() <-chan *Message {
-	return i.ch
+func (p *packeter) Chan() <-chan *Package {
+	return p.ch
 }
 
-func (i *packeter) SetCallback(id uint32, callback Callback) {
-	i.mux.RLock()
-	i.callbacks[id] = callback
-	i.mux.RUnlock()
-	go i.cleanupCallback(id)
+func (p *packeter) SetCallback(id uint32, callback Callback) {
+	p.mux.RLock()
+	p.callbacks[id] = callback
+	p.mux.RUnlock()
+	go p.cleanupCallback(id)
 }
 
-func (i *packeter) cleanupCallback(id uint32) {
+func (p *packeter) cleanupCallback(id uint32) {
 	time.Sleep(time.Millisecond * 10)
-	i.mux.RLock()
-	_, timedout := i.callbacks[id]
-	i.mux.RUnlock()
+	p.mux.RLock()
+	_, timedout := p.callbacks[id]
+	p.mux.RUnlock()
 	if timedout {
-		i.mux.Lock()
-		delete(i.callbacks, id)
-		i.mux.Unlock()
+		p.mux.Lock()
+		delete(p.callbacks, id)
+		p.mux.Unlock()
 		log.Info(log.Lbl("callback_timedout"), id)
 	}
 }
 
 // Receive takes a packet and and address. The address must have an IP of
 // 127.0.0.1. All packets in a message must come from the same Port.
-func (i *packeter) Receive(b []byte, addr *rnet.Addr) {
+func (p *packeter) Receive(b []byte, addr *rnet.Addr) {
 	if !(addr.IP == nil || addr.IP.String() == "127.0.0.1") {
 		log.Info(log.Lbl("non_local_ipc_message"), addr)
 		return
 	}
 
 	id := serial.UnmarshalUint32(b)
-	msg, ok := i.packets[id]
+	pkg, ok := p.packets[id]
 	if !ok {
-		msg = &Message{
+		pkg = &Package{
 			ID:   id,
 			Len:  int(serial.UnmarshalUint32(b[4:])),
 			Addr: addr,
 			Body: b[8:],
-			proc: i.proc,
+			proc: p.proc,
 		}
-	} else if addr.Port() == msg.Addr.Port() {
-		msg.Body = append(msg.Body, b[4:]...)
+	} else if addr.Port() == pkg.Addr.Port() {
+		pkg.Body = append(pkg.Body, b[4:]...)
 	} else {
-		log.Info(log.Lbl("message_changed_ports"), log.KV{"started_on", msg.Addr}, log.KV{"now_on", addr})
+		log.Info(log.Lbl("message_changed_ports"), log.KV{"started_on", pkg.Addr}, log.KV{"now_on", addr})
 		return
 	}
 
-	if len(msg.Body) >= msg.Len {
-		i.mux.RLock()
-		callback, ok := i.callbacks[msg.ID]
-		i.mux.RUnlock()
+	if len(pkg.Body) >= pkg.Len {
+		p.mux.RLock()
+		callback, ok := p.callbacks[pkg.ID]
+		p.mux.RUnlock()
 		if ok {
-			i.mux.Lock()
-			delete(i.callbacks, id)
-			i.mux.Unlock()
-			b, err := msg.ToBase()
+			p.mux.Lock()
+			delete(p.callbacks, id)
+			p.mux.Unlock()
+			b, err := pkg.ToBase()
 			if !log.Error(err) {
 				go callback(b)
 			}
-		} else if i.handler != nil {
-			b, err := msg.ToBase()
+		} else if p.handler != nil {
+			b, err := pkg.ToBase()
 			if !log.Error(err) {
-				go i.handler(b)
+				go p.handler(b)
 			}
 		} else {
-			i.ch <- msg
+			p.ch <- pkg
 		}
-		delete(i.packets, id)
+		delete(p.packets, id)
 	} else {
-		i.packets[id] = msg
+		p.packets[id] = pkg
 	}
 }
 
 // Make takes a message, generates a random ID and calls MakeWithID
-func (i *packeter) Make(msg []byte) [][]byte {
-	return i.MakeWithID(randID(), msg)
+func (p *packeter) Make(pkg []byte) [][]byte {
+	return p.MakeWithID(randID(), pkg)
 }
 
 func randID() uint32 {
@@ -127,23 +127,23 @@ func randID() uint32 {
 // and each packet is prepended with the ID. There is no mechanism for ordering
 // or packet loss, the assumption is that between processes neither will be an
 // issue.
-func (i *packeter) MakeWithID(id uint32, msg []byte) [][]byte {
-	l := len(msg)
+func (p *packeter) MakeWithID(id uint32, pkg []byte) [][]byte {
+	l := len(pkg)
 	b := make([]byte, l+4)
 	serial.MarshalUint32(uint32(l), b)
-	copy(b[4:], msg)
+	copy(b[4:], pkg)
 
-	p := PacketSize - 4
-	ln := int(math.Ceil(float64(l) / float64(p)))
+	pl := PacketSize - 4
+	ln := int(math.Ceil(float64(l) / float64(pl)))
 	pkts := make([][]byte, ln)
 	n := 0
 	ids := serial.MarshalUint32(id, nil)
 	for ; n < ln-1; n++ {
 		pkts[n] = make([]byte, PacketSize)
 		copy(pkts[n], ids)
-		copy(pkts[n][4:], b[n*p:(n+1)*p])
+		copy(pkts[n][4:], b[n*pl:(n+1)*pl])
 	}
-	final := b[n*p:]
+	final := b[n*pl:]
 	pkts[n] = make([]byte, len(final)+4)
 	copy(pkts[n], ids)
 	copy(pkts[n][4:], final)

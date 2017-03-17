@@ -13,9 +13,9 @@ import (
 // type
 const ErrTypesDoNotMatch = errors.String("Types do not match")
 
-// Message is used to assemble the messages and send them through the channel
+// Package is used to assemble the messages and send them through the channel
 // when they are complete.
-type Message struct {
+type Package struct {
 	ID   uint32
 	Body []byte
 	Addr *rnet.Addr
@@ -24,7 +24,7 @@ type Message struct {
 }
 
 // ToBase a message body to get it's type
-func (m *Message) ToBase() (*Base, error) {
+func (m *Package) ToBase() (*Base, error) {
 	var h message.Header
 	err := proto.Unmarshal(m.Body, &h)
 	if err != nil {
