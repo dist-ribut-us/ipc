@@ -2,6 +2,7 @@ package ipc
 
 import (
 	"crypto/rand"
+	"github.com/dist-ribut-us/message"
 	"github.com/dist-ribut-us/rnet"
 	"github.com/stretchr/testify/assert"
 	"testing"
@@ -46,6 +47,35 @@ func TestRoundTripManyPackets(t *testing.T) {
 	assert.Equal(t, addr.String(), out.Addr.String())
 }
 
+func TestHandler(t *testing.T) {
+	ln := PacketSize*3 + 2000
+	p := newPacketer(nil)
+
+	ch := make(chan *message.Header)
+	p.handler = func(b *Base) {
+		ch <- b.Header
+	}
+
+	msg := message.NewHeader(message.Test, make([]byte, ln))
+	rand.Read(msg.Body)
+	pks := p.Make(msg.Marshal())
+
+	addr := rnet.Port(1234).Addr()
+	go func() {
+		for _, pkt := range pks {
+			p.Receive(pkt, addr)
+		}
+	}()
+
+	select {
+	case out := <-ch:
+		assert.Equal(t, msg.Body, out.Body)
+		assert.Equal(t, msg.Type32, out.Type32)
+	case <-time.After(time.Millisecond * 20):
+		t.Error("timed out")
+	}
+}
+
 func TestIPCRoundTrip(t *testing.T) {
 	p1, err := New(1234)
 	assert.NoError(t, err)
@@ -62,8 +92,6 @@ func TestIPCRoundTrip(t *testing.T) {
 }
 
 func TestResponseCallback(t *testing.T) {
-	testType := uint32(3141)
-
 	p1, err := RunNew(1236)
 	assert.NoError(t, err)
 	p2, err := RunNew(1237)
@@ -77,16 +105,16 @@ func TestResponseCallback(t *testing.T) {
 			out <- "fail"
 			return
 		}
-		assert.Equal(t, testType, q.Type)
+		assert.Equal(t, message.Test, q.GetType())
 		assert.Equal(t, []byte{111}, q.Body)
 		q.Respond([]byte("testbody"))
 	}()
 
 	p1.
-		Query(testType, []byte{111}).
+		Query(message.Test, []byte{111}).
 		To(p2.Port()).
 		Send(func(r *Base) {
-			assert.Equal(t, testType, r.Type)
+			assert.Equal(t, message.Test, r.GetType())
 			assert.True(t, r.IsResponse())
 			out <- string(r.Body)
 		})

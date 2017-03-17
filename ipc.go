@@ -58,6 +58,9 @@ func (p *Proc) Stop() error { return p.srv.Stop() }
 // Close will close the connection, freeing the port
 func (p *Proc) Close() error { return p.srv.Close() }
 
+// Handler adds a handler that will be used instead of the return channel
+func (p *Proc) Handler(handler func(*Base)) { p.pktr.handler = handler }
+
 // RunNew returns a Proc for sending and receiving communications with other
 // local processes. The server will be running initially.
 func RunNew(port rnet.Port) (*Proc, error) {

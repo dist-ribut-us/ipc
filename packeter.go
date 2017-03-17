@@ -19,6 +19,7 @@ type packeter struct {
 	callbacks map[uint32]Callback
 	mux       *sync.RWMutex
 	proc      *Proc
+	handler   func(*Base)
 }
 
 func newPacketer(proc *Proc) *packeter {
@@ -59,7 +60,7 @@ func (i *packeter) cleanupCallback(id uint32) {
 // Receive takes a packet and and address. The address must have an IP of
 // 127.0.0.1. All packets in a message must come from the same Port.
 func (i *packeter) Receive(b []byte, addr *rnet.Addr) {
-	if addr.IP.String() != "127.0.0.1" {
+	if !(addr.IP == nil || addr.IP.String() == "127.0.0.1") {
 		log.Info(log.Lbl("non_local_ipc_message"), addr)
 		return
 	}
@@ -92,6 +93,11 @@ func (i *packeter) Receive(b []byte, addr *rnet.Addr) {
 			b, err := msg.ToBase()
 			if !log.Error(err) {
 				go callback(b)
+			}
+		} else if i.handler != nil {
+			b, err := msg.ToBase()
+			if !log.Error(err) {
+				go i.handler(b)
 			}
 		} else {
 			i.ch <- msg

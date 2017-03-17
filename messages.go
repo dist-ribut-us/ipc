@@ -3,23 +3,10 @@ package ipc
 import (
 	"github.com/dist-ribut-us/errors"
 	"github.com/dist-ribut-us/log"
+	"github.com/dist-ribut-us/message"
 	"github.com/dist-ribut-us/rnet"
+	"github.com/dist-ribut-us/serial"
 	"github.com/golang/protobuf/proto"
-)
-
-const (
-	// MaskQuery is applied to a type if it is a query type
-	MaskQuery = uint32(1 << (iota))
-	// MaskResponse is applied to a type if it is a response type
-	MaskResponse
-)
-
-// message index
-const (
-	TUndefined = uint32(iota)
-	TPort
-	TPing
-	TRegister
 )
 
 // ErrTypesDoNotMatch is thrown when trying to convert a Type to the wrong
@@ -38,29 +25,27 @@ type Message struct {
 
 // ToBase a message body to get it's type
 func (m *Message) ToBase() (*Base, error) {
-	var h Header
+	var h message.Header
 	err := proto.Unmarshal(m.Body, &h)
 	if err != nil {
 		return nil, err
 	}
 	base := &Base{
 		Header: &h,
-		port:   m.Addr.Port(),
 		ID:     m.ID,
-		Buf:    m.Body,
 		proc:   m.proc,
+		port:   m.Addr.Port(),
 	}
 	return base, nil
 }
 
-// Base provides a base message type. It wraps ipc.Header and provides helper
-// functions for simple query and response messages.
+// Base provides a base message type. It wraps message.Header and provides
+// helper functions for simple query and response messages.
 type Base struct {
-	*Header
-	port rnet.Port
+	*message.Header
 	ID   uint32
-	Buf  []byte
 	proc *Proc
+	port rnet.Port
 }
 
 // To sets the port Send will send to.
@@ -69,9 +54,8 @@ func (b *Base) To(port rnet.Port) *Base {
 	return b
 }
 
-// Port gets the port on Base. This is the port that base will send to with send
-// or respond. If base was derived from a message, this is the port the message
-// was received from.
+// Port returns the base port - this is the ipc port that the message came from
+// or that it is sent to send to.
 func (b *Base) Port() rnet.Port {
 	return b.port
 }
@@ -81,56 +65,45 @@ func (b *Base) GetID() uint32 {
 	return b.ID
 }
 
-// IsQuery checks if the underlying type is a query
-func (h *Header) IsQuery() bool {
-	return h.Flags&MaskQuery == MaskQuery
-}
-
-// IsResponse checks if the underlying type is a query
-func (h *Header) IsResponse() bool {
-	return h.Flags&MaskResponse == MaskResponse
-}
-
 // Respond to a query
 func (b *Base) Respond(body []byte) {
-	r := &Header{
-		Type:  b.Type,
-		Flags: MaskResponse,
-		Body:  body,
+	r := &message.Header{
+		Type32: b.Type32,
+		Flags:  uint32(message.ResponseFlag),
+		Body:   body,
 	}
 	b.proc.SendResponse(r, b)
 }
 
-// SetFlags exponses Flags for the FlagsGetterSetter interface
-func (h *Header) SetFlags(f uint32) {
-	h.Flags = f
-}
-
-// Unmarshal wraps proto.Unmarshal and uses the underlying buffer
+// Unmarshal the body of the header
 func (b *Base) Unmarshal(pb proto.Message) error {
-	return proto.Unmarshal(b.Buf, pb)
+	return proto.Unmarshal(b.Body, pb)
 }
 
 // Query creates a basic query.
-func (p *Proc) Query(t uint32, body []byte) *Base {
+func (p *Proc) Query(t message.Type, body interface{}) *Base {
+	h := &message.Header{
+		Type32: uint32(t),
+		Flags:  uint32(message.QueryFlag),
+	}
+	h.SetBody(body)
 	return &Base{
-		Header: &Header{
-			Type:  t,
-			Flags: MaskQuery,
-			Body:  body,
-		},
-		proc: p,
+		Header: h,
+		proc:   p,
 	}
 }
 
-// Base creates a basic message with no flags
-func (p *Proc) Base(t uint32, body []byte) *Base {
+// Base creates a basic message with no flags. Body can be either a proto
+// message or a byte slice.
+func (p *Proc) Base(t message.Type, body interface{}) *Base {
+	h := &message.Header{
+		Type32: uint32(t),
+	}
+	h.SetBody(body)
 	return &Base{
-		Header: &Header{
-			Type: t,
-			Body: body,
-		},
-		proc: p,
+		Header: h,
+		ID:     randID(),
+		proc:   p,
 	}
 }
 
@@ -190,8 +163,24 @@ func (b *Base) Send(callback Callback) {
 		if log.Error(err) {
 			return
 		}
-		b.proc.Send(buf, b.port)
+		b.proc.Send(buf, b.Port())
 	} else {
-		b.proc.SendQuery(b.Header, b.port, callback)
+		b.proc.SendQuery(b.Header, b.Port(), callback)
 	}
+}
+
+// RequestServicePort is a shorthand to request a service port from pool.
+func (p *Proc) RequestServicePort(serviceName string, pool rnet.Port, callback Callback) {
+	p.
+		Query(message.GetPort, []byte(serviceName)).
+		To(pool).
+		Send(callback)
+}
+
+// RegisterWithOverlay is a shorthand to register a service with overlay.
+func (p *Proc) RegisterWithOverlay(id uint32, overlay rnet.Port, callback Callback) {
+	p.
+		Base(message.RegisterService, serial.MarshalUint32(id, nil)).
+		To(overlay).
+		Send(callback)
 }
