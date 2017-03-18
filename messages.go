@@ -5,7 +5,6 @@ import (
 	"github.com/dist-ribut-us/log"
 	"github.com/dist-ribut-us/message"
 	"github.com/dist-ribut-us/rnet"
-	"github.com/dist-ribut-us/serial"
 	"github.com/golang/protobuf/proto"
 )
 
@@ -65,12 +64,12 @@ func (b *Base) GetID() uint32 {
 }
 
 // Respond to a query
-func (b *Base) Respond(body []byte) {
+func (b *Base) Respond(body interface{}) {
 	r := &message.Header{
 		Type32: b.Type32,
 		Flags:  uint32(message.ResponseFlag),
-		Body:   body,
 	}
+	r.SetBody(body)
 	b.proc.SendResponse(r, b)
 }
 
@@ -171,15 +170,15 @@ func (b *Base) Send(callback Callback) {
 // RequestServicePort is a shorthand to request a service port from pool.
 func (p *Proc) RequestServicePort(serviceName string, pool rnet.Port, callback Callback) {
 	p.
-		Query(message.GetPort, []byte(serviceName)).
+		Query(message.GetPort, serviceName).
 		To(pool).
 		Send(callback)
 }
 
 // RegisterWithOverlay is a shorthand to register a service with overlay.
-func (p *Proc) RegisterWithOverlay(id uint32, overlay rnet.Port, callback Callback) {
+func (p *Proc) RegisterWithOverlay(serviceID uint32, overlay rnet.Port, callback Callback) {
 	p.
-		Base(message.RegisterService, serial.MarshalUint32(id, nil)).
+		Base(message.RegisterService, serviceID).
 		To(overlay).
 		Send(callback)
 }
