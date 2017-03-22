@@ -52,6 +52,13 @@ func (b *Base) To(port rnet.Port) *Base {
 	return b
 }
 
+// SetAddr sets the address on a message. This indicates the network address
+// where the message should be sent, most likely by overlay.
+func (b *Base) SetAddr(addr *rnet.Addr) *Base {
+	b.Header.SetAddr(addr)
+	return b
+}
+
 // Port returns the base port - this is the ipc port that the message came from
 // or that it is sent to send to.
 func (b *Base) Port() rnet.Port {
@@ -68,6 +75,9 @@ func (b *Base) Respond(body interface{}) {
 	r := &message.Header{
 		Type32: b.Type32,
 		Flags:  uint32(message.ResponseFlag),
+	}
+	if b.IsFromNet() {
+		r.SetFlag(message.ToNet)
 	}
 	r.SetBody(body)
 	b.proc.SendResponse(r, b)
@@ -125,7 +135,7 @@ func (p *Proc) SendResponse(r proto.Message, q Query) {
 	}
 	errs := p.srv.SendAll(pkts, addr)
 	if errs != nil {
-		log.Info(log.Lbl("while_sending_response_over_ipc"), errs)
+		log.Info(log.Lbl("while_sending_response_over_ipc"), errs, log.Line(-3))
 	}
 }
 
@@ -149,7 +159,7 @@ func (p *Proc) SendQuery(q proto.Message, port rnet.Port, callback Callback) {
 	p.pktr.SetCallback(id, callback)
 	errs := p.srv.SendAll(pkts, addr)
 	if errs != nil {
-		log.Info(log.Lbl("while_sending_response_over_ipc"), errs)
+		log.Info(log.Lbl("while_sending_query_over_ipc"), errs, log.Line(-3))
 	}
 }
 
