@@ -59,6 +59,18 @@ func (b *Base) SetAddr(addr *rnet.Addr) *Base {
 	return b
 }
 
+// SetFlag field on the Header
+func (b *Base) SetFlag(flag message.BitFlag) *Base {
+	b.Header.SetFlag(flag)
+	return b
+}
+
+// SetService field on the header
+func (b *Base) SetService(service uint32) *Base {
+	b.Header.Service = service
+	return b
+}
+
 // Port returns the base port - this is the ipc port that the message came from
 // or that it is sent to send to.
 func (b *Base) Port() rnet.Port {
@@ -78,6 +90,7 @@ func (b *Base) Respond(body interface{}) {
 	}
 	if b.IsFromNet() {
 		r.SetFlag(message.ToNet)
+		r.Addrpb = b.Addrpb
 	}
 	r.SetBody(body)
 	b.proc.SendResponse(r, b)
@@ -186,9 +199,9 @@ func (p *Proc) RequestServicePort(serviceName string, pool rnet.Port, callback C
 }
 
 // RegisterWithOverlay is a shorthand to register a service with overlay.
-func (p *Proc) RegisterWithOverlay(serviceID uint32, overlay rnet.Port, callback Callback) {
+func (p *Proc) RegisterWithOverlay(serviceID uint32, overlay rnet.Port) {
 	p.
 		Base(message.RegisterService, serviceID).
 		To(overlay).
-		Send(callback)
+		Send(nil)
 }

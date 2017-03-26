@@ -2,12 +2,17 @@ package ipc
 
 import (
 	"crypto/rand"
+	"github.com/dist-ribut-us/log"
 	"github.com/dist-ribut-us/message"
 	"github.com/dist-ribut-us/rnet"
 	"github.com/stretchr/testify/assert"
 	"testing"
 	"time"
 )
+
+func init() {
+	log.Mute()
+}
 
 func TestRoundTripOnePacket(t *testing.T) {
 	ln := 1000

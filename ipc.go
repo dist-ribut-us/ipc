@@ -91,3 +91,19 @@ func (p *Proc) Send(msg []byte, port rnet.Port) {
 		log.Info(log.Lbl("while_sending_over_ipc"), errs)
 	}
 }
+
+// SendWithID takes an id, a message and the port of the receiving process and
+// sends the message to the other process. It prepends the length of the
+// messsage. Unlike the packeter, this does not worry about dropped packets or
+// ordering.
+func (p *Proc) SendWithID(id uint32, msg []byte, port rnet.Port) {
+	pkts := p.pktr.MakeWithID(id, msg)
+	addr := port.On("127.0.0.1")
+	if log.Error(errors.Wrap("generating_local_addr_for_ipc", addr.Err)) {
+		return
+	}
+	errs := p.srv.SendAll(pkts, addr)
+	if errs != nil {
+		log.Info(log.Lbl("while_sending_over_ipc"), errs)
+	}
+}
