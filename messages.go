@@ -5,7 +5,6 @@ import (
 	"github.com/dist-ribut-us/log"
 	"github.com/dist-ribut-us/message"
 	"github.com/dist-ribut-us/rnet"
-	"github.com/golang/protobuf/proto"
 )
 
 // ErrTypesDoNotMatch is thrown when trying to convert a Type to the wrong
@@ -24,14 +23,10 @@ type Package struct {
 
 // ToBase a message body to get it's type
 func (m *Package) ToBase() (*Base, error) {
-	var h message.Header
-	err := proto.Unmarshal(m.Body, &h)
-	if err != nil {
-		return nil, err
-	}
+	h := message.Unmarshal(m.Body)
 	h.Id = m.ID
 	base := &Base{
-		Header: &h,
+		Header: h,
 		proc:   m.proc,
 		port:   m.Addr.Port(),
 	}
@@ -103,12 +98,16 @@ func (b *Base) Respond(body interface{}) {
 		r.Addrpb = b.Addrpb
 	}
 	r.SetBody(body)
-	b.proc.SendResponse(r, b)
-}
 
-// Unmarshal the body of the header
-func (b *Base) Unmarshal(pb proto.Message) error {
-	return proto.Unmarshal(b.Body, pb)
+	pkts := b.proc.pktr.make(b.Id, r.Marshal())
+	addr := b.Port().Local()
+	if log.Error(errors.Wrap("generating_local_addr_for_ipc", addr.Err)) {
+		return
+	}
+	errs := b.proc.srv.SendAll(pkts, addr)
+	if errs != nil {
+		log.Info(log.Lbl("while_sending_response_over_ipc"), errs, log.Line(-1))
+	}
 }
 
 // Query creates a basic query.
@@ -127,13 +126,8 @@ func (p *Proc) Query(t message.Type, body interface{}) *Base {
 // Base creates a basic message with no flags. Body can be either a proto
 // message or a byte slice.
 func (p *Proc) Base(t message.Type, body interface{}) *Base {
-	h := &message.Header{
-		Type32: uint32(t),
-	}
-	h.SetBody(body)
-	h.Id = randID()
 	return &Base{
-		Header: h,
+		Header: message.NewHeader(t, body),
 		proc:   p,
 	}
 }
@@ -144,60 +138,20 @@ type Query interface {
 	Port() rnet.Port
 }
 
-// SendResponse takes a response and the the wrapped query it is responding to
-// and sends the response with the same message id to source of the query.
-func (p *Proc) SendResponse(r proto.Message, q Query) {
-	msg, err := proto.Marshal(r)
-	if log.Error(errors.Wrap("wrapping_response_to_send", err)) {
-		return
-	}
-	pkts := p.pktr.MakeWithID(q.GetID(), msg)
-	addr := q.Port().On("127.0.0.1")
-	if log.Error(errors.Wrap("generating_local_addr_for_ipc", addr.Err)) {
-		return
-	}
-	errs := p.srv.SendAll(pkts, addr)
-	if errs != nil {
-		log.Info(log.Lbl("while_sending_response_over_ipc"), errs, log.Line(-3))
-	}
-}
-
 // Callback is used when sending a query
 type Callback func(r *Base)
-
-// SendQuery will send a query to another process and send the response to the
-// callback function. This also means that the response will not end up on the
-// Proc channel.
-func (p *Proc) SendQuery(q proto.Message, port rnet.Port, callback Callback) {
-	msg, err := proto.Marshal(q)
-	if log.Error(errors.Wrap("wrapping_query_to_send", err)) {
-		return
-	}
-	id := randID()
-	pkts := p.pktr.MakeWithID(id, msg)
-	addr := port.On("127.0.0.1")
-	if log.Error(errors.Wrap("generating_local_addr_for_ipc", addr.Err)) {
-		return
-	}
-	p.pktr.SetCallback(id, callback)
-	errs := p.srv.SendAll(pkts, addr)
-	if errs != nil {
-		log.Info(log.Lbl("while_sending_query_over_ipc"), errs, log.Line(-3))
-	}
-}
 
 // Send a message. If callback is not nil, the reponse will be sent to the
 // callback
 func (b *Base) Send(callback Callback) {
-	if callback == nil {
-		buf, err := proto.Marshal(b.Header)
-		if log.Error(err) {
-			return
-		}
-		b.proc.Send(buf, b.Port())
-	} else {
-		b.proc.SendQuery(b.Header, b.Port(), callback)
+	id := b.Id
+	b.Id = 0
+
+	if callback != nil {
+		b.proc.pktr.setCallback(id, callback)
 	}
+
+	b.proc.Send(id, b.Marshal(), b.Port())
 }
 
 // RequestServicePort is a shorthand to request a service port from pool.

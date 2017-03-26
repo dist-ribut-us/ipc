@@ -19,7 +19,7 @@ func TestRoundTripOnePacket(t *testing.T) {
 	p := newPacketer(nil)
 	msg := make([]byte, ln)
 	rand.Read(msg)
-	pks := p.Make(msg)
+	pks := p.make(987654321, msg)
 	addr, err := rnet.ResolveAddr("127.0.0.1:1234")
 	assert.NoError(t, err)
 	go func() {
@@ -28,7 +28,7 @@ func TestRoundTripOnePacket(t *testing.T) {
 		}
 	}()
 
-	out := <-p.Chan()
+	out := <-p.ch
 	assert.Equal(t, msg, out.Body)
 	assert.Equal(t, addr.String(), out.Addr.String())
 }
@@ -38,7 +38,7 @@ func TestRoundTripManyPackets(t *testing.T) {
 	p := newPacketer(nil)
 	msg := make([]byte, ln)
 	rand.Read(msg)
-	pks := p.Make(msg)
+	pks := p.make(987654321, msg)
 	addr, err := rnet.ResolveAddr("127.0.0.1:1234")
 	assert.NoError(t, err)
 	go func() {
@@ -47,7 +47,7 @@ func TestRoundTripManyPackets(t *testing.T) {
 		}
 	}()
 
-	out := <-p.Chan()
+	out := <-p.ch
 	assert.Equal(t, msg, out.Body)
 	assert.Equal(t, addr.String(), out.Addr.String())
 }
@@ -63,8 +63,8 @@ func TestHandler(t *testing.T) {
 
 	msg := message.NewHeader(message.Test, make([]byte, ln))
 	rand.Read(msg.Body)
-	id := randID()
-	pks := p.MakeWithID(id, msg.Marshal())
+	var id uint32 = 12354678
+	pks := p.make(id, msg.Marshal())
 
 	addr := rnet.Port(1234).Addr()
 	go func() {
@@ -92,7 +92,7 @@ func TestIPCRoundTrip(t *testing.T) {
 	ln := 1000
 	msg := make([]byte, ln)
 	rand.Read(msg)
-	p1.Send(msg, 1235)
+	p1.Send(6789, msg, 1235)
 
 	msgOut := <-p2.Chan()
 	assert.Equal(t, msg, msgOut.Body)

@@ -10,3 +10,8 @@ received the original message.
 Handler auto translates to Base, but that's probably not actually good. It
 should just take a message and call ToBase. I can even provide an IPC base
 handle wrapper.
+
+Instead of creating a goroutine for each callback, it would be better to have
+one go routine that runs as long as there are callbacks, but once the list drops
+to 0, it returns. Every time we place a callback, that gets started if it's not
+running.

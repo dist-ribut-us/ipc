@@ -10,10 +10,6 @@ import (
 	"github.com/dist-ribut-us/rnet"
 )
 
-// PacketSize is the max packet size, it's set a bit less than the absolute max
-// at a nice, round value.
-var PacketSize = 50000
-
 // Proc represents a process that can send and receive communication from other
 // local Procs over UDP.
 type Proc struct {
@@ -74,30 +70,18 @@ func RunNew(port rnet.Port) (*Proc, error) {
 
 // Chan returns the channel messages will be sent on from the packeter
 func (p *Proc) Chan() <-chan *Package {
-	return p.pktr.Chan()
+	return p.pktr.ch
 }
 
-// Send takes a message and the port of the receiving process and sends the
-// message to the other process. It prepends the length of the messsage. Unlike
-// the packeter, this does not worry about dropped packets or ordering.
-func (p *Proc) Send(msg []byte, port rnet.Port) {
-	pkts := p.pktr.Make(msg)
-	addr := port.On("127.0.0.1")
-	if log.Error(errors.Wrap("generating_local_addr_for_ipc", addr.Err)) {
-		return
-	}
-	errs := p.srv.SendAll(pkts, addr)
-	if errs != nil {
-		log.Info(log.Lbl("while_sending_over_ipc"), errs)
-	}
-}
-
-// SendWithID takes an id, a message and the port of the receiving process and
+// Send takes an id, a message and the port of the receiving process and
 // sends the message to the other process. It prepends the length of the
 // messsage. Unlike the packeter, this does not worry about dropped packets or
 // ordering.
-func (p *Proc) SendWithID(id uint32, msg []byte, port rnet.Port) {
-	pkts := p.pktr.MakeWithID(id, msg)
+func (p *Proc) Send(id uint32, msg []byte, port rnet.Port) {
+	if msg == nil {
+		return
+	}
+	pkts := p.pktr.make(id, msg)
 	addr := port.On("127.0.0.1")
 	if log.Error(errors.Wrap("generating_local_addr_for_ipc", addr.Err)) {
 		return

@@ -1,8 +1,6 @@
 package ipc
 
 import (
-	"crypto/rand"
-	"github.com/dist-ribut-us/errors"
 	"github.com/dist-ribut-us/log"
 	"github.com/dist-ribut-us/rnet"
 	"github.com/dist-ribut-us/serial"
@@ -10,6 +8,10 @@ import (
 	"sync"
 	"time"
 )
+
+// PacketSize is the max packet size, it's set a bit less than the absolute max
+// at a nice, round value.
+var PacketSize = 50000
 
 // packeter handles making and collecting packets for inter-process
 // communicaiton
@@ -32,12 +34,7 @@ func newPacketer(proc *Proc) *packeter {
 	}
 }
 
-// Chan returns the channel messages will be sent on
-func (p *packeter) Chan() <-chan *Package {
-	return p.ch
-}
-
-func (p *packeter) SetCallback(id uint32, callback Callback) {
+func (p *packeter) setCallback(id uint32, callback Callback) {
 	p.mux.RLock()
 	p.callbacks[id] = callback
 	p.mux.RUnlock()
@@ -108,26 +105,12 @@ func (p *packeter) Receive(b []byte, addr *rnet.Addr) {
 	}
 }
 
-// Make takes a message, generates a random ID and calls MakeWithID
-func (p *packeter) Make(pkg []byte) [][]byte {
-	return p.MakeWithID(randID(), pkg)
-}
-
-func randID() uint32 {
-	b := make([]byte, 4)
-	_, err := rand.Read(b)
-	if log.Error(errors.Wrap("generating_packet_id", err)) {
-		return 0
-	}
-	return (uint32(b[0]) + uint32(b[1])<<8 + uint32(b[2])<<16 + uint32(b[3])<<24)
-}
-
-// MakeWithID takes an ID and a message and divides it into packets, where each
+// make takes an ID and a message and divides it into packets, where each
 // is no longer than PacketSize. The message is prepended with the total length
 // and each packet is prepended with the ID. There is no mechanism for ordering
 // or packet loss, the assumption is that between processes neither will be an
 // issue.
-func (p *packeter) MakeWithID(id uint32, pkg []byte) [][]byte {
+func (p *packeter) make(id uint32, pkg []byte) [][]byte {
 	l := len(pkg)
 	b := make([]byte, l+4)
 	serial.MarshalUint32(uint32(l), b)
