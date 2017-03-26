@@ -52,6 +52,16 @@ func (b *Base) To(port rnet.Port) *Base {
 	return b
 }
 
+// ToNet sets the fields for a message to be sent to the Overlay service and
+// then out over the net.
+func (b *Base) ToNet(overlayPort rnet.Port, netAddr *rnet.Addr, serviceID uint32) *Base {
+	return b.
+		SetFlag(message.ToNet).
+		SetAddr(netAddr).
+		SetService(serviceID).
+		To(overlayPort)
+}
+
 // SetAddr sets the address on a message. This indicates the network address
 // where the message should be sent, most likely by overlay.
 func (b *Base) SetAddr(addr *rnet.Addr) *Base {
