@@ -134,3 +134,22 @@ func TestResponseCallback(t *testing.T) {
 	}
 
 }
+
+func TestSelfSend(t *testing.T) {
+	// Overlay sends to itself sometimes
+	ln := 1000
+	p1, err := RunNew(3333)
+	assert.NoError(t, err)
+
+	msg := make([]byte, ln)
+	rand.Read(msg)
+
+	p1.Send(12345, msg, p1.Port())
+
+	select {
+	case out := <-p1.Chan():
+		assert.Equal(t, msg, out.Body)
+	case <-time.After(time.Millisecond * 20):
+		t.Error("timeout")
+	}
+}

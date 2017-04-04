@@ -24,6 +24,9 @@ type Package struct {
 // ToBase a message body to get it's type
 func (m *Package) ToBase() (*Base, error) {
 	h := message.Unmarshal(m.Body)
+	if h == nil {
+		return nil, nil
+	}
 	h.Id = m.ID
 	base := &Base{
 		Header: h,
@@ -93,11 +96,12 @@ func (b *Base) Respond(body interface{}) {
 		Type32: b.Type32,
 		Flags:  uint32(message.ResponseFlag),
 	}
+	r.SetBody(body)
+
 	if b.IsFromNet() {
 		r.SetFlag(message.ToNet)
 		r.Addrpb = b.Addrpb
 	}
-	r.SetBody(body)
 
 	pkts := b.proc.pktr.make(b.Id, r.Marshal())
 	addr := b.Port().Local()
@@ -112,11 +116,8 @@ func (b *Base) Respond(body interface{}) {
 
 // Query creates a basic query.
 func (p *Proc) Query(t message.Type, body interface{}) *Base {
-	h := &message.Header{
-		Type32: uint32(t),
-		Flags:  uint32(message.QueryFlag),
-	}
-	h.SetBody(body)
+	h := message.NewHeader(t, body)
+	h.SetFlag(message.QueryFlag)
 	return &Base{
 		Header: h,
 		proc:   p,
