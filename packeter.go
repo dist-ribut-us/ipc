@@ -5,7 +5,6 @@ import (
 	"github.com/dist-ribut-us/rnet"
 	"github.com/dist-ribut-us/serial"
 	"math"
-	"sync"
 	"time"
 )
 
@@ -16,40 +15,32 @@ var PacketSize = 50000
 // packeter handles making and collecting packets for inter-process
 // communicaiton
 type packeter struct {
-	packets      map[uint32]*Package
-	packetsMux   sync.RWMutex
-	ch           chan *Package
-	callbacks    map[uint32]Callback
-	callbacksMux sync.RWMutex
-	proc         *Proc
-	handler      func(*Base)
+	packets   *packets
+	ch        chan *Package
+	callbacks *callbacks
+	proc      *Proc
+	handler   func(*Base)
 }
 
 func newPacketer(proc *Proc) *packeter {
 	return &packeter{
-		packets:   make(map[uint32]*Package),
+		packets:   newpackets(),
 		ch:        make(chan *Package),
-		callbacks: make(map[uint32]Callback),
+		callbacks: newcallbacks(),
 		proc:      proc,
 	}
 }
 
 func (p *packeter) setCallback(id uint32, callback Callback) {
-	p.callbacksMux.RLock()
-	p.callbacks[id] = callback
-	p.callbacksMux.RUnlock()
+	p.callbacks.set(id, callback)
 	go p.cleanupCallback(id)
 }
 
 func (p *packeter) cleanupCallback(id uint32) {
 	time.Sleep(time.Millisecond * 20)
-	p.callbacksMux.RLock()
-	_, timedout := p.callbacks[id]
-	p.callbacksMux.RUnlock()
+	_, timedout := p.callbacks.get(id)
 	if timedout {
-		p.callbacksMux.Lock()
-		delete(p.callbacks, id)
-		p.callbacksMux.Unlock()
+		p.callbacks.delete(id)
 		log.Info(log.Lbl("callback_timedout"), id)
 	}
 }
@@ -63,9 +54,7 @@ func (p *packeter) Receive(b []byte, addr *rnet.Addr) {
 	}
 
 	id := serial.UnmarshalUint32(b)
-	p.packetsMux.RLock()
-	pkg, ok := p.packets[id]
-	p.packetsMux.RUnlock()
+	pkg, ok := p.packets.get(id)
 	if !ok {
 		pkg = &Package{
 			ID:   id,
@@ -74,6 +63,8 @@ func (p *packeter) Receive(b []byte, addr *rnet.Addr) {
 			Body: b[8:],
 			proc: p.proc,
 		}
+		// don't call p.packets.set here, it gets called at the bottom if the
+		// message is more than one packet long, which it often isn't
 	} else if addr.Port() == pkg.Addr.Port() {
 		pkg.Body = append(pkg.Body, b[4:]...)
 	} else {
@@ -82,19 +73,13 @@ func (p *packeter) Receive(b []byte, addr *rnet.Addr) {
 	}
 
 	if len(pkg.Body) >= pkg.Len {
-		p.callbacksMux.RLock()
-		callback, ok := p.callbacks[pkg.ID]
-		p.callbacksMux.RUnlock()
+		callback, ok := p.callbacks.get(pkg.ID)
 		if ok {
 			b, err := pkg.ToBase()
 			if !log.Error(err) && b.IsResponse() {
-				p.callbacksMux.Lock()
-				delete(p.callbacks, id)
-				p.callbacksMux.Unlock()
+				p.callbacks.delete(id)
 				go callback(b)
-				p.packetsMux.Lock()
-				delete(p.packets, id)
-				p.packetsMux.Unlock()
+				p.packets.delete(id)
 				return
 			}
 		}
@@ -108,13 +93,9 @@ func (p *packeter) Receive(b []byte, addr *rnet.Addr) {
 			p.ch <- pkg
 		}
 
-		p.packetsMux.Lock()
-		delete(p.packets, id)
-		p.packetsMux.Unlock()
+		p.packets.delete(id)
 	} else {
-		p.packetsMux.Lock()
-		p.packets[id] = pkg
-		p.packetsMux.Unlock()
+		p.packets.set(id, pkg)
 	}
 }
 
