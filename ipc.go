@@ -55,7 +55,7 @@ func (p *Proc) Stop() error { return p.srv.Stop() }
 func (p *Proc) Close() error { return p.srv.Close() }
 
 // Handler adds a handler that will be used instead of the return channel
-func (p *Proc) Handler(handler func(*Base)) { p.pktr.handler = handler }
+func (p *Proc) Handler(handler func(*Base)) { p.pktr.baseHandler = handler }
 
 // RunNew returns a Proc for sending and receiving communications with other
 // local processes. The server will be running initially.
@@ -66,11 +66,6 @@ func RunNew(port rnet.Port) (*Proc, error) {
 	}
 	go p.Run()
 	return p, nil
-}
-
-// Chan returns the channel messages will be sent on from the packeter
-func (p *Proc) Chan() <-chan *Package {
-	return p.pktr.ch
 }
 
 // Send takes an id, a message and the port of the receiving process and

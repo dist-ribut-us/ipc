@@ -27,10 +27,18 @@ func TestRoundTripOnePacket(t *testing.T) {
 			p.Receive(pkt, addr)
 		}
 	}()
+	ch := make(chan *Package)
+	p.packetHandler = func(msg *Package) {
+		ch <- msg
+	}
 
-	out := <-p.ch
-	assert.Equal(t, msg, out.Body)
-	assert.Equal(t, addr.String(), out.Addr.String())
+	select {
+	case out := <-ch:
+		assert.Equal(t, msg, out.Body)
+		assert.Equal(t, addr.String(), out.Addr.String())
+	case <-time.After(time.Millisecond * 10):
+		t.Error("timeout")
+	}
 }
 
 func TestRoundTripManyPackets(t *testing.T) {
@@ -47,9 +55,18 @@ func TestRoundTripManyPackets(t *testing.T) {
 		}
 	}()
 
-	out := <-p.ch
-	assert.Equal(t, msg, out.Body)
-	assert.Equal(t, addr.String(), out.Addr.String())
+	ch := make(chan *Package)
+	p.packetHandler = func(msg *Package) {
+		ch <- msg
+	}
+
+	select {
+	case out := <-ch:
+		assert.Equal(t, msg, out.Body)
+		assert.Equal(t, addr.String(), out.Addr.String())
+	case <-time.After(time.Millisecond * 10):
+		t.Error("timeout")
+	}
 }
 
 func TestHandler(t *testing.T) {
@@ -57,7 +74,7 @@ func TestHandler(t *testing.T) {
 	p := newPacketer(nil)
 
 	ch := make(chan *message.Header)
-	p.handler = func(b *Base) {
+	p.baseHandler = func(b *Base) {
 		ch <- b.Header
 	}
 
@@ -89,13 +106,22 @@ func TestIPCRoundTrip(t *testing.T) {
 	p2, err := RunNew(1235)
 	assert.NoError(t, err)
 
+	ch := make(chan *Package)
+	p2.pktr.packetHandler = func(msg *Package) {
+		ch <- msg
+	}
+
 	ln := 1000
 	msg := make([]byte, ln)
 	rand.Read(msg)
 	p1.Send(6789, msg, 1235)
 
-	msgOut := <-p2.Chan()
-	assert.Equal(t, msg, msgOut.Body)
+	select {
+	case out := <-ch:
+		assert.Equal(t, msg, out.Body)
+	case <-time.After(time.Millisecond * 20):
+		t.Error("timed out")
+	}
 }
 
 func TestResponseCallback(t *testing.T) {
@@ -106,16 +132,15 @@ func TestResponseCallback(t *testing.T) {
 
 	out := make(chan string)
 
-	go func() {
-		q, err := (<-p2.Chan()).ToBase()
-		if !assert.NoError(t, err) || !assert.True(t, q.IsQuery()) {
+	p2.pktr.baseHandler = func(q *Base) {
+		if !assert.True(t, q.IsQuery()) {
 			out <- "fail"
 			return
 		}
 		assert.Equal(t, message.Test, q.GetType())
 		assert.Equal(t, []byte{111}, q.Body)
 		q.Respond([]byte("testbody"))
-	}()
+	}
 
 	p1.
 		Query(message.Test, []byte{111}).
@@ -144,10 +169,15 @@ func TestSelfSend(t *testing.T) {
 	msg := make([]byte, ln)
 	rand.Read(msg)
 
+	ch := make(chan *Package)
+	p1.pktr.packetHandler = func(msg *Package) {
+		ch <- msg
+	}
+
 	p1.Send(12345, msg, p1.Port())
 
 	select {
-	case out := <-p1.Chan():
+	case out := <-ch:
 		assert.Equal(t, msg, out.Body)
 	case <-time.After(time.Millisecond * 20):
 		t.Error("timeout")

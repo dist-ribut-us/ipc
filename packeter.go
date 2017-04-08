@@ -15,17 +15,16 @@ var PacketSize = 50000
 // packeter handles making and collecting packets for inter-process
 // communicaiton
 type packeter struct {
-	packets   *packets
-	ch        chan *Package
-	callbacks *callbacks
-	proc      *Proc
-	handler   func(*Base)
+	packets       *packets
+	callbacks     *callbacks
+	proc          *Proc
+	packetHandler func(*Package)
+	baseHandler   func(*Base)
 }
 
 func newPacketer(proc *Proc) *packeter {
 	return &packeter{
 		packets:   newpackets(),
-		ch:        make(chan *Package),
 		callbacks: newcallbacks(),
 		proc:      proc,
 	}
@@ -84,13 +83,15 @@ func (p *packeter) Receive(b []byte, addr *rnet.Addr) {
 			}
 		}
 
-		if p.handler != nil {
+		if p.packetHandler != nil {
+			p.packetHandler(pkg)
+		} else if p.baseHandler != nil {
 			b, err := pkg.ToBase()
 			if !log.Error(err) {
-				go p.handler(b)
+				go p.baseHandler(b)
 			}
 		} else {
-			p.ch <- pkg
+			log.Info(log.Lbl("unhandled_message"))
 		}
 
 		p.packets.delete(id)
