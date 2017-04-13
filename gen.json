@@ -4,9 +4,5 @@
     "Key":"uint32",
     "Val":"*Package",
     "Name": "packets"
-  },{
-    "Key":"uint32",
-    "Val":"Callback",
-    "Name": "callbacks"
   }]
 }

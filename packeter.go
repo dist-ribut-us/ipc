@@ -5,42 +5,34 @@ import (
 	"github.com/dist-ribut-us/rnet"
 	"github.com/dist-ribut-us/serial"
 	"math"
-	"time"
 )
 
 // PacketSize is the max packet size, it's set a bit less than the absolute max
 // at a nice, round value.
 var PacketSize = 50000
 
+// Package is used to assemble the messages and send them through the channel
+// when they are complete.
+type Package struct {
+	ID   uint32
+	Body []byte
+	Addr *rnet.Addr
+	Len  int
+	proc *Proc
+}
+
 // packeter handles making and collecting packets for inter-process
 // communicaiton
 type packeter struct {
-	packets       *packets
-	callbacks     *callbacks
-	proc          *Proc
-	packetHandler func(*Package)
-	baseHandler   func(*Base)
+	packets *packets
+	proc    *Proc
+	handler func(*Package)
 }
 
 func newPacketer(proc *Proc) *packeter {
 	return &packeter{
-		packets:   newpackets(),
-		callbacks: newcallbacks(),
-		proc:      proc,
-	}
-}
-
-func (p *packeter) setCallback(id uint32, callback Callback) {
-	p.callbacks.set(id, callback)
-	go p.cleanupCallback(id)
-}
-
-func (p *packeter) cleanupCallback(id uint32) {
-	time.Sleep(time.Millisecond * 20)
-	_, timedout := p.callbacks.get(id)
-	if timedout {
-		p.callbacks.delete(id)
-		log.Info(log.Lbl("callback_timedout"), id)
+		packets: newpackets(),
+		proc:    proc,
 	}
 }
 
@@ -71,33 +63,19 @@ func (p *packeter) Receive(b []byte, addr *rnet.Addr) {
 		return
 	}
 
-	if len(pkg.Body) >= pkg.Len {
-		callback, ok := p.callbacks.get(pkg.ID)
-		if ok {
-			b, err := pkg.ToBase()
-			if !log.Error(err) && b.IsResponse() {
-				p.callbacks.delete(id)
-				go callback(b)
-				p.packets.delete(id)
-				return
-			}
-		}
-
-		if p.packetHandler != nil {
-			p.packetHandler(pkg)
-		} else if p.baseHandler != nil {
-			b, err := pkg.ToBase()
-			if !log.Error(err) {
-				go p.baseHandler(b)
-			}
-		} else {
-			log.Info(log.Lbl("unhandled_message"))
-		}
-
-		p.packets.delete(id)
-	} else {
+	if len(pkg.Body) < pkg.Len {
 		p.packets.set(id, pkg)
+		return
 	}
+
+	if p.handler != nil {
+		p.handler(pkg)
+	} else {
+		log.Info(log.Lbl("unhandled_message"))
+	}
+
+	p.packets.delete(id)
+
 }
 
 // make takes an ID and a message and divides it into packets, where each
