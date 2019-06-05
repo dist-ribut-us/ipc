@@ -38,11 +38,11 @@ func (p *Proc) Run() { p.srv.Run() }
 // IsRunning indicates if the listen loop is running
 func (p *Proc) IsRunning() bool { return p.srv.IsRunning() }
 
-// Port returns the UDP port
-func (p *Proc) Port() rnet.Port { return p.srv.Port() }
+// GetPort returns the UDP port
+func (p *Proc) GetPort() rnet.Port { return p.srv.GetPort() }
 
 // String returns the address of the process
-func (p *Proc) String() string { return fmt.Sprintf("127.0.0.1:%d", p.srv.Port()) }
+func (p *Proc) String() string { return fmt.Sprintf("127.0.0.1:%d", p.srv.GetPort()) }
 
 // IsOpen returns true if the connection is open. If the server is closed, it
 // can neither send nor receive

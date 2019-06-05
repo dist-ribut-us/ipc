@@ -56,7 +56,7 @@ func (p *packeter) Receive(b []byte, addr *rnet.Addr) {
 		}
 		// don't call p.packets.set here, it gets called at the bottom if the
 		// message is more than one packet long, which it often isn't
-	} else if addr.Port() == pkg.Addr.Port() {
+	} else if addr.GetPort() == pkg.Addr.GetPort() {
 		pkg.Body = append(pkg.Body, b[4:]...)
 	} else {
 		log.Info(log.Lbl("message_changed_ports"), log.KV{"started_on", pkg.Addr}, log.KV{"now_on", addr})

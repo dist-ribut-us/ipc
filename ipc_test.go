@@ -106,7 +106,7 @@ func TestSelfSend(t *testing.T) {
 		ch <- msg
 	}
 
-	p1.Send(12345, msg, p1.Port())
+	p1.Send(12345, msg, p1.GetPort())
 
 	select {
 	case out := <-ch:
